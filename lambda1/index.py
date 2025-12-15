@@ -129,7 +129,6 @@ def handler(event, context):
             with tracer.start_as_current_span("api_request_processing") as span:
                 span.set_attribute("lambda.function", "api-handler")
                 span.set_attribute("lambda.name", os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda1-api-handler'))
-                span.set_attribute("service.name", "lambda1-api-handler")
                 span.set_attribute("http.method", event.get('httpMethod', 'POST'))
                 span.set_attribute("http.path", event.get('path', '/process'))
         

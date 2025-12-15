@@ -110,7 +110,6 @@ def handler(event, context):
                 ) as span:
                     span.set_attribute("lambda.function", "worker")
                     span.set_attribute("lambda.name", os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda2-worker'))
-                    span.set_attribute("service.name", "lambda2-worker")
                     span.set_attribute("messaging.system", "sqs")
                     span.set_attribute("messaging.operation", "process")
                     
