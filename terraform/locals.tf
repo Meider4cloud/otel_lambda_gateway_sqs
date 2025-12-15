@@ -59,11 +59,11 @@ locals {
         OTEL_METRICS_EXPORTER = "otlp"
         OTEL_LOGS_EXPORTER    = "otlp"
         # New Relic OTLP endpoint
-        OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/traces"
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/traces" 
+        OTEL_EXPORTER_OTLP_ENDPOINT         = "https://otlp.eu01.nr-data.net/v1/traces"
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT  = "https://otlp.eu01.nr-data.net/v1/traces"
         OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/metrics"
-        OTEL_EXPORTER_OTLP_HEADERS  = "api-key=${var.newrelic_license_key}"
-        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
+        OTEL_EXPORTER_OTLP_HEADERS          = "api-key=${var.newrelic_license_key}"
+        OTEL_EXPORTER_OTLP_PROTOCOL         = "http/protobuf"
         # Disable X-Ray exporter explicitly
         OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = "aws-xray"
         # Resource attributes for New Relic
@@ -98,10 +98,10 @@ locals {
         # New Relic OTLP endpoint (direct export, bypassing collector) - correct EU endpoint  
         OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/traces"
         # Set specific endpoints for each signal type
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/traces"
+        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT  = "https://otlp.eu01.nr-data.net/v1/traces"
         OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/metrics"
-        OTEL_EXPORTER_OTLP_HEADERS  = "api-key=${var.newrelic_license_key}"
-        OTEL_EXPORTER_OTLP_PROTOCOL = "http/protobuf"
+        OTEL_EXPORTER_OTLP_HEADERS          = "api-key=${var.newrelic_license_key}"
+        OTEL_EXPORTER_OTLP_PROTOCOL         = "http/protobuf"
         # New Relic credentials (for collector configuration)
         NEW_RELIC_ACCOUNT_ID  = var.newrelic_account_id
         NEW_RELIC_LICENSE_KEY = var.newrelic_license_key
