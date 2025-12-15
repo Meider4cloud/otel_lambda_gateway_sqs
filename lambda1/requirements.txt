@@ -1,2 +1,16 @@
-# Basic requirements for Lambda 1 (no OpenTelemetry)
-boto3
+# Requirements for community OpenTelemetry configurations
+# These provide the OpenTelemetry SDK and instrumentations
+boto3==1.34.0
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-exporter-otlp==1.21.0
+opentelemetry-exporter-otlp-proto-grpc==1.21.0
+opentelemetry-exporter-otlp-proto-http==1.21.0
+opentelemetry-instrumentation==0.42b0
+opentelemetry-instrumentation-boto3sqs==0.42b0
+opentelemetry-instrumentation-botocore==0.42b0
+opentelemetry-instrumentation-logging==0.42b0
+opentelemetry-instrumentation-requests==0.42b0
+opentelemetry-instrumentation-urllib3==0.42b0
+opentelemetry-propagator-b3==1.21.0
+opentelemetry-distro==0.42b0

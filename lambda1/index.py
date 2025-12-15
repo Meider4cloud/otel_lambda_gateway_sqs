@@ -24,24 +24,28 @@ try:
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.sdk.metrics import MeterProvider
         from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-        from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
         from opentelemetry.instrumentation.boto3sqs import Boto3SQSInstrumentor
         from opentelemetry.instrumentation.botocore import BotocoreInstrumentor
-        from opentelemetry.instrumentation.logging import LoggingInstrumentor
         from opentelemetry.sdk.resources import Resource
         
-        # Create resource
+        # Create resource with Lambda identification
         resource = Resource.create({
-            "service.name": os.environ.get('OTEL_SERVICE_NAME', 'lambda-function'),
+            "service.name": os.environ.get('OTEL_SERVICE_NAME', 'lambda1-api-handler'),
             "service.version": os.environ.get('OTEL_SERVICE_VERSION', '1.0.0'),
+            "lambda.function": "api-handler",
+            "lambda.name": os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda1-api-handler')
         })
         
         # Set up tracing with environment variable configuration
         trace_provider = TracerProvider(resource=resource)
         
-        # Configure OTLP exporter with headers if provided
-        endpoint = os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://localhost:4318')
+        # Configure OTLP exporter with specific endpoints and headers
+        traces_endpoint = os.environ.get('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', 
+                                        os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://localhost:4318'))
+        metrics_endpoint = os.environ.get('OTEL_EXPORTER_OTLP_METRICS_ENDPOINT', 
+                                         os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://localhost:4318'))
         headers_str = os.environ.get('OTEL_EXPORTER_OTLP_HEADERS', '')
         headers = {}
         if headers_str:
@@ -52,17 +56,17 @@ try:
                     headers[key.strip()] = value.strip()
         
         otlp_exporter = OTLPSpanExporter(
-            endpoint=endpoint,
+            endpoint=traces_endpoint,
             headers=headers,
             timeout=5  # 5 second timeout
         )
         trace_provider.add_span_processor(BatchSpanProcessor(otlp_exporter, max_export_batch_size=50, schedule_delay_millis=1000))
         trace.set_tracer_provider(trace_provider)
         
-        # Set up metrics with same configuration
+        # Set up metrics with specific endpoint
         metric_reader = PeriodicExportingMetricReader(
             OTLPMetricExporter(
-                endpoint=endpoint,
+                endpoint=metrics_endpoint,
                 headers=headers,
                 timeout=5  # 5 second timeout
             ),
@@ -71,7 +75,6 @@ try:
         metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
         
         # Auto-instrument
-        LoggingInstrumentor().instrument()
         Boto3SQSInstrumentor().instrument()
         BotocoreInstrumentor().instrument()
         
@@ -120,6 +123,16 @@ def handler(event, context):
     Lambda function to handle API Gateway requests and send messages to SQS
     """
     try:
+        # Create spans for processing with Lambda identification
+        if OTEL_AVAILABLE:
+            tracer = trace.get_tracer(__name__)
+            with tracer.start_as_current_span("api_request_processing") as span:
+                span.set_attribute("lambda.function", "api-handler")
+                span.set_attribute("lambda.name", os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda1-api-handler'))
+                span.set_attribute("service.name", "lambda1-api-handler")
+                span.set_attribute("http.method", event.get('httpMethod', 'POST'))
+                span.set_attribute("http.path", event.get('path', '/process'))
+        
         # Log OpenTelemetry status
         logger.info(f"OTEL_AVAILABLE = {OTEL_AVAILABLE}")
         
@@ -189,7 +202,7 @@ def handler(event, context):
         logger.info(f"Message sent to SQS: {response['MessageId']}")
         
         # Force flush telemetry before Lambda freeze
-        _force_flush_telemetry()
+        force_flush_telemetry()
         
         # Return success response
         return {
@@ -209,7 +222,7 @@ def handler(event, context):
         logger.error(f"Error processing request: {str(e)}")
         
         # Force flush telemetry even on error
-        _force_flush_telemetry()
+        force_flush_telemetry()
         
         return {
             'statusCode': 500,
@@ -223,7 +236,7 @@ def handler(event, context):
             })
         }
 
-def _force_flush_telemetry():
+def force_flush_telemetry():
     """Force flush OpenTelemetry data before Lambda freeze"""
     if not OTEL_AVAILABLE:
         return

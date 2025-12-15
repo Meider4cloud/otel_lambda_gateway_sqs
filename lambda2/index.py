@@ -7,19 +7,68 @@ import json
 import logging
 from datetime import datetime
 
-# OpenTelemetry imports for force_flush
+# OpenTelemetry imports
 try:
     from opentelemetry import trace, metrics
     from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+    from opentelemetry.sdk.resources import Resource
     from opentelemetry import propagate
     from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
     from opentelemetry.trace import SpanKind, Status, StatusCode
+    
+    # Initialize manual instrumentation
+    if os.environ.get('AWS_LAMBDA_EXEC_WRAPPER') is None:
+        # Create resource with Lambda identification
+        resource = Resource.create({
+            "service.name": os.environ.get('OTEL_SERVICE_NAME', 'lambda2-worker'),
+            "service.version": os.environ.get('OTEL_SERVICE_VERSION', '1.0.0'),
+            "lambda.function": "worker",
+            "lambda.name": os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda2-worker')
+        })
+        
+        # Get configuration from environment variables
+        traces_endpoint = os.environ.get('OTEL_EXPORTER_OTLP_TRACES_ENDPOINT', 
+                                        os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://localhost:4318'))
+        metrics_endpoint = os.environ.get('OTEL_EXPORTER_OTLP_METRICS_ENDPOINT', 
+                                         os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT', 'http://localhost:4318'))
+        headers_str = os.environ.get('OTEL_EXPORTER_OTLP_HEADERS', '')
+        headers = {}
+        if headers_str:
+            for header in headers_str.split(','):
+                if '=' in header:
+                    key, value = header.split('=', 1)
+                    headers[key.strip()] = value.strip()
+        
+        # Set up tracing with specific endpoint
+        trace_provider = TracerProvider(resource=resource)
+        otlp_exporter = OTLPSpanExporter(
+            endpoint=traces_endpoint,
+            headers=headers,
+            timeout=5
+        )
+        trace_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+        trace.set_tracer_provider(trace_provider)
+        
+        # Set up metrics with specific endpoint
+        metric_reader = PeriodicExportingMetricReader(
+            OTLPMetricExporter(
+                endpoint=metrics_endpoint,
+                headers=headers,
+                timeout=5
+            ),
+            export_interval_millis=5000
+        )
+        metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
+    
     OTEL_AVAILABLE = True
 except ImportError as e:
     OTEL_AVAILABLE = False
     print(f"OpenTelemetry import error: {e}")
-    # Note: logger not configured yet, use print for now
 
 # Configure logging
 logger = logging.getLogger()
@@ -27,203 +76,145 @@ logger.setLevel(logging.INFO)
 
 def handler(event, context):
     """
-    Lambda function to process messages from SQS
+    Lambda 2 - Worker
+    Processes messages from SQS with OpenTelemetry tracing
     """
+    
+    logger.info(f"Received SQS event: {json.dumps(event)}")
+    
     try:
-        # Log OpenTelemetry status
-        logger.info(f"OTEL_AVAILABLE = {OTEL_AVAILABLE}")
-        
-        # Log the incoming event
-        logger.info(f"Received SQS event: {json.dumps(event)}")
-        
-        # Process each record from SQS
+        # Process each record in the SQS event
         for record in event['Records']:
             # Extract message body
             message_body = json.loads(record['body'])
-            receipt_handle = record['receiptHandle']
             
-            # Extract trace context from SQS message and continue the trace
-            parent_span_context = None
+            # Extract trace context for propagation
+            trace_context = message_body.get('traceContext', {})
+            
+            # Create span with Lambda identification and trace propagation
             if OTEL_AVAILABLE:
-                try:
-                    # First, try to get trace context from AWS X-Ray trace header in attributes
-                    attributes = record.get('attributes', {})
-                    aws_trace_header = attributes.get('AWSTraceHeader')
-                    
-                    if aws_trace_header:
-                        logger.info(f"Found AWSTraceHeader: {aws_trace_header}")
-                        # Parse AWS X-Ray trace header: Root=1-trace_id-parent_id;Parent=span_id;Sampled=1
-                        parent_span_context = _parse_xray_trace_header(aws_trace_header)
-                        
-                    # Fallback: Try custom message attributes (for community OTel configs)
-                    if not parent_span_context:
-                        message_attributes = record.get('messageAttributes', {})
-                        if 'TraceId' in message_attributes and 'SpanId' in message_attributes:
-                            trace_id_hex = message_attributes['TraceId']['stringValue']
-                            span_id_hex = message_attributes['SpanId']['stringValue']
-                            trace_flags = int(message_attributes.get('TraceFlags', {}).get('stringValue', '1'))
-                            
-                            # Reconstruct span context
-                            from opentelemetry.trace import TraceFlags, SpanContext
-                            parent_span_context = SpanContext(
-                                trace_id=int(trace_id_hex, 16),
-                                span_id=int(span_id_hex, 16),
-                                is_remote=True,
-                                trace_flags=TraceFlags(trace_flags)
-                            )
-                    
-                    # Last resort: try to get from message body trace context
-                    if not parent_span_context and 'traceContext' in message_body and message_body['traceContext']:
-                        propagator = TraceContextTextMapPropagator()
-                        parent_context = propagate.extract(message_body['traceContext'])
-                        parent_span_context = trace.get_current_span(parent_context).get_span_context()
-                        
-                except Exception as e:
-                    logger.warning(f"Failed to extract trace context: {e}")
-            
-            logger.info(f"Processing message: {message_body}")
-            
-            # Create a child span that continues the trace chain
-            if OTEL_AVAILABLE and parent_span_context:
                 tracer = trace.get_tracer(__name__)
+                # Extract parent context if available
+                parent_context = None
+                if trace_context:
+                    try:
+                        propagator = TraceContextTextMapPropagator()
+                        parent_context = propagator.extract(trace_context)
+                    except Exception as e:
+                        logger.warning(f"Failed to extract trace context: {e}")
+                
                 with tracer.start_as_current_span(
                     "sqs_message_processing",
-                    kind=SpanKind.CONSUMER,
-                    context=trace.set_span_in_context(trace.NonRecordingSpan(parent_span_context))
+                    context=parent_context,
+                    kind=SpanKind.CONSUMER
                 ) as span:
-                    span.set_attribute("sqs.receipt_handle", receipt_handle)
-                    span.set_attribute("message.request_id", message_body.get('requestId', 'unknown'))
-                    # Your business logic here
-                    process_message(message_body)
+                    span.set_attribute("lambda.function", "worker")
+                    span.set_attribute("lambda.name", os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda2-worker'))
+                    span.set_attribute("service.name", "lambda2-worker")
+                    span.set_attribute("messaging.system", "sqs")
+                    span.set_attribute("messaging.operation", "process")
+                    
+                    # Process the message
+                    result = process_message_with_span(message_body, span)
             else:
-                # Fallback if trace context is not available
-                process_message(message_body)
+                # Process without tracing
+                result = process_message(message_body)
             
-            logger.info(f"Successfully processed message with receipt handle: {receipt_handle}")
+            logger.info(f"Message processed successfully: {result}")
         
         # Force flush telemetry before Lambda freeze
-        _force_flush_telemetry()
+        force_flush_telemetry()
         
         return {
-            'statusCode': 200,
-            'body': json.dumps('Messages processed successfully')
+            'batchItemFailures': []  # Return empty array to indicate all messages processed successfully
         }
         
     except Exception as e:
         logger.error(f"Error processing SQS messages: {str(e)}")
+        
         # Force flush telemetry even on error
-        _force_flush_telemetry()
-        # Re-raise the exception to trigger SQS retry mechanism
-        raise e
+        force_flush_telemetry()
+        
+        # Return the failed message for retry
+        return {
+            'batchItemFailures': [{'itemIdentifier': record['messageId']} for record in event['Records']]
+        }
 
-def process_message(message):
+def process_message_with_span(message_body, span):
     """
-    Process individual message - implement your business logic here
+    Process individual message with OpenTelemetry span
     """
-    try:
-        request_id = message.get('requestId', 'unknown')
-        timestamp = message.get('timestamp', 'unknown')
-        data = message.get('data', {})
-        
-        logger.info(f"Processing request {request_id} with data: {data}")
-        
-        # Simulate some processing time
-        import time
-        time.sleep(1)
-        
-        # Example processing logic
-        if 'action' in data:
-            action = data['action']
-            logger.info(f"Executing action: {action}")
-            
-            if action == 'process_order':
-                process_order(data)
-            elif action == 'send_notification':
-                send_notification(data)
-            else:
-                logger.info(f"Unknown action: {action}")
-        
-        logger.info(f"Completed processing for request {request_id}")
-        
-    except Exception as e:
-        logger.error(f"Error in process_message: {str(e)}")
-        raise e
+    
+    # Extract message data
+    message = message_body.get('message', 'No message')
+    test_id = message_body.get('test_id', 'no-id')
+    source = message_body.get('source', 'unknown')
+    
+    # Add message attributes to span
+    if span and span.is_recording():
+        span.set_attribute("message.test_id", test_id)
+        span.set_attribute("message.source", source)
+        span.set_attribute("message.size", len(json.dumps(message_body)))
+    
+    # Simulate some business logic processing
+    processing_timestamp = datetime.now().isoformat()
+    
+    result = {
+        'original_message': message,
+        'source': source,
+        'test_id': test_id,
+        'processed_at': processing_timestamp,
+        'processing_status': 'completed'
+    }
+    
+    # Log the processing result
+    logger.info(f"Message processing completed for test_id: {test_id}")
+    
+    return result
 
-def process_order(data):
-    """Example order processing logic"""
-    order_id = data.get('orderId', 'unknown')
-    logger.info(f"Processing order: {order_id}")
-    # Add your order processing logic here
-
-def send_notification(data):
-    """Example notification sending logic"""
-    recipient = data.get('recipient', 'unknown')
-    message = data.get('message', 'No message')
-    logger.info(f"Sending notification to {recipient}: {message}")
-    # Add your notification logic here
-
-def _parse_xray_trace_header(trace_header):
+def process_message(message_body):
     """
-    Parse AWS X-Ray trace header and return OpenTelemetry SpanContext
-    Format: Root=1-trace_id-parent_id;Parent=span_id;Sampled=1;Lineage=...
+    Process individual message without tracing (fallback)
     """
-    try:
-        from opentelemetry.trace import TraceFlags, SpanContext
-        
-        # Split header by semicolon
-        parts = trace_header.split(';')
-        
-        trace_id = None
-        parent_id = None
-        sampled = True
-        
-        for part in parts:
-            if part.startswith('Root='):
-                # Extract trace ID from Root=1-trace_id-parent_id format
-                root_value = part.split('=')[1]
-                root_parts = root_value.split('-')
-                if len(root_parts) >= 3:
-                    # trace_id is the second part (after version)
-                    trace_id = int(root_parts[1], 16)
-            elif part.startswith('Parent='):
-                # Parent span ID
-                parent_id = int(part.split('=')[1], 16)
-            elif part.startswith('Sampled='):
-                sampled = part.split('=')[1] == '1'
-        
-        if trace_id and parent_id:
-            logger.info(f"Parsed trace context: trace_id={trace_id:032x}, parent_id={parent_id:016x}, sampled={sampled}")
-            return SpanContext(
-                trace_id=trace_id,
-                span_id=parent_id,
-                is_remote=True,
-                trace_flags=TraceFlags(0x01 if sampled else 0x00)
-            )
-        else:
-            logger.warning(f"Failed to parse trace header: {trace_header}")
-            return None
-            
-    except Exception as e:
-        logger.warning(f"Error parsing X-Ray trace header '{trace_header}': {e}")
-        return None
+    
+    # Extract message data
+    message = message_body.get('message', 'No message')
+    test_id = message_body.get('test_id', 'no-id')
+    source = message_body.get('source', 'unknown')
+    
+    # Simulate some business logic processing
+    processing_timestamp = datetime.now().isoformat()
+    
+    result = {
+        'original_message': message,
+        'source': source,
+        'test_id': test_id,
+        'processed_at': processing_timestamp,
+        'processing_status': 'completed'
+    }
+    
+    # Log the processing result
+    logger.info(f"Message processing completed for test_id: {test_id}")
+    
+    return result
 
-def _force_flush_telemetry():
+def force_flush_telemetry():
     """Force flush OpenTelemetry data before Lambda freeze"""
     if not OTEL_AVAILABLE:
         return
     
     try:
-        # Force flush traces
+        # Force flush traces with shorter timeout
         tracer_provider = trace.get_tracer_provider()
         if hasattr(tracer_provider, 'force_flush'):
-            tracer_provider.force_flush(timeout_millis=1000)
-            logger.debug("Forced flush of trace data")
+            success = tracer_provider.force_flush(timeout_millis=500)
+            logger.info(f"Trace flush success: {success}")
         
-        # Force flush metrics
+        # Force flush metrics with shorter timeout
         meter_provider = metrics.get_meter_provider()
         if hasattr(meter_provider, 'force_flush'):
-            meter_provider.force_flush(timeout_millis=1000)
-            logger.debug("Forced flush of metrics data")
+            success = meter_provider.force_flush(timeout_millis=500)
+            logger.info(f"Metrics flush success: {success}")
             
     except Exception as e:
         logger.warning(f"Error during force_flush: {str(e)}")

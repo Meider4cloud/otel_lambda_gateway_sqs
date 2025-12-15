@@ -1,2 +1,10 @@
-# Basic requirements for Lambda 2 (no OpenTelemetry)
-# No additional dependencies needed
+# Requirements for community OpenTelemetry configurations (Lambda 2 - Worker)
+# These provide the OpenTelemetry SDK and instrumentations
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-exporter-otlp==1.21.0
+opentelemetry-exporter-otlp-proto-grpc==1.21.0
+opentelemetry-exporter-otlp-proto-http==1.21.0
+opentelemetry-instrumentation==0.42b0
+opentelemetry-instrumentation-logging==0.42b0
+opentelemetry-propagator-b3==1.21.0
