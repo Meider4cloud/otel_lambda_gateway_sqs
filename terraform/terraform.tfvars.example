@@ -1,0 +1,33 @@
+# Example configurations for different observability setups
+
+# Configuration 1: X-Ray with ADOT layer (default)
+observability_config = "xray_adot"
+aws_region = "eu-central-1"
+environment = "poc"
+project_name = "otel-alml"
+lambda_timeout = 60
+
+default_tags = {
+  Owner = "Marcus.Eder.external@eon.com"
+}
+
+# Uncomment and configure for New Relic setups:
+# newrelic_license_key = "your-newrelic-license-key-here"
+# newrelic_account_id = "your-newrelic-account-id-here"
+
+# ============================================
+# Alternative configurations - use one at a time:
+# ============================================
+
+# Configuration 2: X-Ray with Community OpenTelemetry layer
+# observability_config = "xray_community"
+
+# Configuration 3: New Relic with ADOT layer  
+# observability_config = "newrelic_adot"
+# newrelic_license_key = "your-newrelic-license-key-here"
+# newrelic_account_id = "your-newrelic-account-id-here"
+
+# Configuration 4: New Relic with Community OpenTelemetry layer
+# observability_config = "newrelic_community"
+# newrelic_license_key = "your-newrelic-license-key-here"
+# newrelic_account_id = "your-newrelic-account-id-here"

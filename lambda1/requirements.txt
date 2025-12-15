@@ -1,0 +1,2 @@
+# Basic requirements for Lambda 1 (no OpenTelemetry)
+boto3

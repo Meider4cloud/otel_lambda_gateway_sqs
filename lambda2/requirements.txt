@@ -1,0 +1,2 @@
+# Basic requirements for Lambda 2 (no OpenTelemetry)
+# No additional dependencies needed
