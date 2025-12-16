@@ -15,6 +15,7 @@ try:
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry import propagate
     from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+    from opentelemetry.trace import SpanKind
     OTEL_AVAILABLE = True
     
     # Initialize manual instrumentation for community OTel configurations
@@ -62,6 +63,21 @@ try:
         )
         trace_provider.add_span_processor(BatchSpanProcessor(otlp_exporter, max_export_batch_size=50, schedule_delay_millis=1000))
         trace.set_tracer_provider(trace_provider)
+        
+        # Set up propagation - use both X-Ray and W3C for AWS compatibility
+        try:
+            from opentelemetry.propagators.composite import CompositePropagator
+            from opentelemetry.propagators.aws import AwsXRayPropagator
+            composite_propagator = CompositePropagator([
+                AwsXRayPropagator(),
+                TraceContextTextMapPropagator()
+            ])
+            propagate.set_global_textmap(composite_propagator)
+            print("Using X-Ray + W3C propagation")
+        except ImportError:
+            # Fall back to W3C propagation only
+            propagate.set_global_textmap(TraceContextTextMapPropagator())
+            print("Using W3C propagation only (X-Ray propagator not available)")
         
         # Set up metrics with specific endpoint
         metric_reader = PeriodicExportingMetricReader(
@@ -118,20 +134,148 @@ def test_connectivity():
         logger.error(f"Connectivity test failed: {e}")
         return False
 
+def process_within_span(event, context, span):
+    """Process the request within the provided span context"""
+    
+    # Extract body from API Gateway event
+    if 'body' in event:
+        if isinstance(event['body'], str):
+            body = json.loads(event['body'])
+        else:
+            body = event['body']
+    else:
+        body = {"message": "Hello from API"}
+    
+    # Create message for SQS
+    message = {
+        "requestId": context.aws_request_id,
+        "timestamp": context.get_remaining_time_in_millis(),
+        "data": body
+    }
+    
+    # Prepare message attributes with trace information
+    message_attributes = {
+        'RequestId': {
+            'StringValue': context.aws_request_id,
+            'DataType': 'String'
+        }
+    }
+    
+    # Get current trace context for manual propagation to SQS message
+    trace_context = {}
+    propagate.inject(trace_context)
+    
+    # Add trace context to message body for Lambda2 to extract
+    message["traceContext"] = trace_context
+    
+    # Also add as message attributes for redundancy
+    if trace_context:
+        if 'traceparent' in trace_context:
+            message_attributes['traceparent'] = {
+                'StringValue': trace_context['traceparent'],
+                'DataType': 'String'
+            }
+        if 'tracestate' in trace_context:
+            message_attributes['tracestate'] = {
+                'StringValue': trace_context['tracestate'],
+                'DataType': 'String'
+            }
+        if 'X-Amzn-Trace-Id' in trace_context:
+            message_attributes['X-Amzn-Trace-Id'] = {
+                'StringValue': trace_context['X-Amzn-Trace-Id'],
+                'DataType': 'String'
+            }
+    
+    logger.info(f"Injected trace context: {trace_context}")
+            
+    # Send message to SQS - instrumentation will create producer spans automatically
+    response = sqs.send_message(
+        QueueUrl=SQS_QUEUE_URL,
+        MessageBody=json.dumps(message),
+        MessageAttributes=message_attributes
+    )
+    
+    logger.info(f"Message sent to SQS: {response['MessageId']}")
+    
+    # Add span attributes for SQS operation
+    span.set_attribute("messaging.system", "sqs")
+    span.set_attribute("messaging.operation", "publish")
+    span.set_attribute("messaging.destination", SQS_QUEUE_URL.split('/')[-1])
+    span.set_attribute("messaging.message_id", response['MessageId'])
+    span.set_attribute("messaging.url", SQS_QUEUE_URL)
+    # Mark this as the root span of the distributed trace
+    span.set_attribute("span.kind", "server")
+    
+    # Force flush telemetry before Lambda freeze
+    force_flush_telemetry()
+    
+    # Return success response
+    return {
+        'statusCode': 200,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': json.dumps({
+            'message': 'Request processed successfully',
+            'messageId': response['MessageId'],
+            'requestId': context.aws_request_id
+        })
+    }
+
+def process_without_span(event, context):
+    """Process the request without OpenTelemetry tracing"""
+    
+    # Extract body from API Gateway event
+    if 'body' in event:
+        if isinstance(event['body'], str):
+            body = json.loads(event['body'])
+        else:
+            body = event['body']
+    else:
+        body = {"message": "Hello from API"}
+        
+    # Create message for SQS
+    message = {
+        "requestId": context.aws_request_id,
+        "timestamp": context.get_remaining_time_in_millis(),
+        "data": body,
+        "traceContext": {}
+    }
+    
+    # Send message to SQS
+    response = sqs.send_message(
+        QueueUrl=SQS_QUEUE_URL,
+        MessageBody=json.dumps(message),
+        MessageAttributes={
+            'RequestId': {
+                'StringValue': context.aws_request_id,
+                'DataType': 'String'
+            }
+        }
+    )
+    
+    logger.info(f"Message sent to SQS: {response['MessageId']}")
+    
+    # Return success response
+    return {
+        'statusCode': 200,
+        'headers': {
+            'Content-Type': 'application/json',
+            'Access-Control-Allow-Origin': '*'
+        },
+        'body': json.dumps({
+            'message': 'Request processed successfully',
+            'messageId': response['MessageId'],
+            'requestId': context.aws_request_id
+        })
+    }
+
 def handler(event, context):
     """
     Lambda function to handle API Gateway requests and send messages to SQS
     """
     try:
-        # Create spans for processing with Lambda identification
-        if OTEL_AVAILABLE:
-            tracer = trace.get_tracer(__name__)
-            with tracer.start_as_current_span("api_request_processing") as span:
-                span.set_attribute("lambda.function", "api-handler")
-                span.set_attribute("lambda.name", os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda1-api-handler'))
-                span.set_attribute("http.method", event.get('httpMethod', 'POST'))
-                span.set_attribute("http.path", event.get('path', '/process'))
-        
         # Log OpenTelemetry status
         logger.info(f"OTEL_AVAILABLE = {OTEL_AVAILABLE}")
         
@@ -141,81 +285,39 @@ def handler(event, context):
         # Log the incoming event
         logger.info(f"Received event: {json.dumps(event)}")
         
-        # Extract body from API Gateway event
-        if 'body' in event:
-            if isinstance(event['body'], str):
-                body = json.loads(event['body'])
-            else:
-                body = event['body']
-        else:
-            body = {"message": "Hello from API"}
-        
-        # Get current trace context
-        trace_context = {}
+        # Create spans for processing with Lambda identification
         if OTEL_AVAILABLE:
-            # Extract current trace context for propagation
-            propagator = TraceContextTextMapPropagator()
-            propagate.inject(trace_context)
+            tracer = trace.get_tracer(__name__)
             
-        # Create message for SQS
-        message = {
-            "requestId": context.aws_request_id,
-            "timestamp": context.get_remaining_time_in_millis(),
-            "data": body,
-            "traceContext": trace_context  # Add trace context to message body
-        }
-        
-        # Prepare message attributes with trace information
-        message_attributes = {
-            'RequestId': {
-                'StringValue': context.aws_request_id,
-                'DataType': 'String'
-            }
-        }
-        
-        # Add trace context as message attributes if available
-        if OTEL_AVAILABLE and trace_context:
-            current_span = trace.get_current_span()
-            if current_span.is_recording():
-                span_context = current_span.get_span_context()
-                message_attributes['TraceId'] = {
-                    'StringValue': format(span_context.trace_id, '032x'),
-                    'DataType': 'String'
-                }
-                message_attributes['SpanId'] = {
-                    'StringValue': format(span_context.span_id, '016x'),
-                    'DataType': 'String'
-                }
-                message_attributes['TraceFlags'] = {
-                    'StringValue': str(span_context.trace_flags),
-                    'DataType': 'String'
-                }
+            # Extract existing X-Ray trace context from Lambda environment
+            trace_header = os.environ.get('_X_AMZN_TRACE_ID')
+            parent_context = None
+            
+            if trace_header:
+                # Extract X-Ray trace context
+                carrier = {'X-Amzn-Trace-Id': trace_header}
+                parent_context = propagate.extract(carrier)
+                logger.info(f"Extracted X-Ray trace context: {trace_header}")
+            
+            # Create a SERVER span continuing the X-Ray trace
+            with tracer.start_as_current_span(
+                "api_request_processing",
+                kind=SpanKind.SERVER,
+                context=parent_context
+            ) as span:
+                span.set_attribute("lambda.function", "api-handler")
+                span.set_attribute("lambda.name", os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda1-api-handler'))
+                span.set_attribute("http.method", event.get('httpMethod', 'POST'))
+                span.set_attribute("http.path", event.get('path', '/process'))
+                span.set_attribute("faas.execution", context.aws_request_id)
+                span.set_attribute("faas.id", context.function_name)
                 
-        # Send message to SQS
-        response = sqs.send_message(
-            QueueUrl=SQS_QUEUE_URL,
-            MessageBody=json.dumps(message),
-            MessageAttributes=message_attributes
-        )
-        
-        logger.info(f"Message sent to SQS: {response['MessageId']}")
-        
-        # Force flush telemetry before Lambda freeze
-        force_flush_telemetry()
-        
-        # Return success response
-        return {
-            'statusCode': 200,
-            'headers': {
-                'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': '*'
-            },
-            'body': json.dumps({
-                'message': 'Request processed successfully',
-                'messageId': response['MessageId'],
-                'requestId': context.aws_request_id
-            })
-        }
+                # All processing within span context
+                return process_within_span(event, context, span)
+        else:
+            # Process without tracing
+            return process_without_span(event, context)
+
         
     except Exception as e:
         logger.error(f"Error processing request: {str(e)}")

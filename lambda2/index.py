@@ -64,6 +64,21 @@ try:
             export_interval_millis=5000
         )
         metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
+        
+        # Set up propagation - use both X-Ray and W3C for AWS compatibility
+        try:
+            from opentelemetry.propagators.composite import CompositePropagator
+            from opentelemetry.propagators.aws import AwsXRayPropagator
+            composite_propagator = CompositePropagator([
+                AwsXRayPropagator(),
+                TraceContextTextMapPropagator()
+            ])
+            propagate.set_global_textmap(composite_propagator)
+            print("Using X-Ray + W3C propagation")
+        except ImportError:
+            # Fall back to W3C propagation only
+            propagate.set_global_textmap(TraceContextTextMapPropagator())
+            print("Using W3C propagation only (X-Ray propagator not available)")
     
     OTEL_AVAILABLE = True
 except ImportError as e:
@@ -88,8 +103,32 @@ def handler(event, context):
             # Extract message body
             message_body = json.loads(record['body'])
             
-            # Extract trace context for propagation
-            trace_context = message_body.get('traceContext', {})
+            # Extract trace context from multiple sources (X-Ray and W3C)
+            trace_context = {}
+            
+            # Extract X-Ray trace from Lambda environment
+            trace_header = os.environ.get('_X_AMZN_TRACE_ID')
+            if trace_header:
+                trace_context['X-Amzn-Trace-Id'] = trace_header
+                logger.info(f"Found X-Ray trace header: {trace_header}")
+            
+            # Also extract from SQS attributes if available
+            if 'attributes' in record and 'AWSTraceHeader' in record['attributes']:
+                aws_trace_header = record['attributes']['AWSTraceHeader']
+                trace_context['X-Amzn-Trace-Id'] = aws_trace_header
+                logger.info(f"Found SQS X-Ray trace header: {aws_trace_header}")
+            
+            # Extract W3C trace context from message attributes (fallback)
+            if 'messageAttributes' in record:
+                msg_attrs = record['messageAttributes']
+                if 'traceparent' in msg_attrs:
+                    trace_context['traceparent'] = msg_attrs['traceparent']['stringValue']
+                if 'tracestate' in msg_attrs:
+                    trace_context['tracestate'] = msg_attrs['tracestate']['stringValue']
+            
+            # Fallback to message body trace context
+            body_trace_context = message_body.get('traceContext', {})
+            trace_context.update(body_trace_context)
             
             # Create span with Lambda identification and trace propagation
             if OTEL_AVAILABLE:
@@ -98,20 +137,31 @@ def handler(event, context):
                 parent_context = None
                 if trace_context:
                     try:
-                        propagator = TraceContextTextMapPropagator()
-                        parent_context = propagator.extract(trace_context)
+                        parent_context = propagate.extract(trace_context)
+                        logger.info(f"Successfully extracted trace context: {list(trace_context.keys())}")
                     except Exception as e:
                         logger.warning(f"Failed to extract trace context: {e}")
+                        logger.info(f"Trace context content: {trace_context}")
+                else:
+                    logger.info("No trace context found in SQS message")
+                
+                # Determine the correct context for span creation
+                span_context = parent_context if parent_context else None
                 
                 with tracer.start_as_current_span(
                     "sqs_message_processing",
-                    context=parent_context,
+                    context=span_context,
                     kind=SpanKind.CONSUMER
                 ) as span:
                     span.set_attribute("lambda.function", "worker")
                     span.set_attribute("lambda.name", os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'lambda2-worker'))
                     span.set_attribute("messaging.system", "sqs")
                     span.set_attribute("messaging.operation", "process")
+                    span.set_attribute("messaging.message_id", record.get('messageId', ''))
+                    span.set_attribute("faas.execution", context.aws_request_id)
+                    span.set_attribute("faas.id", context.function_name)
+                    # Mark this as a consumer span in the distributed trace
+                    span.set_attribute("span.kind", "consumer")
                     
                     # Process the message
                     result = process_message_with_span(message_body, span)
