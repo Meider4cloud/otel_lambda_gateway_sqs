@@ -32,7 +32,7 @@ resource "aws_api_gateway_integration" "lambda_integration" {
 
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
-  uri                     = aws_lambda_function.lambda1.invoke_arn
+  uri                     = module.lambda_otel.lambda1_invoke_arn
 }
 
 # API Gateway Deployment
@@ -75,7 +75,7 @@ resource "aws_api_gateway_stage" "api_stage" {
 resource "aws_lambda_permission" "api_gateway_lambda" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.lambda1.function_name
+  function_name = module.lambda_otel.lambda1_function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_api_gateway_rest_api.api.execution_arn}/*/*"
 }

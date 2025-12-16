@@ -1,41 +1,41 @@
-output "api_gateway_url" {
-  description = "API Gateway endpoint URL"
-  value       = "${aws_api_gateway_rest_api.api.execution_arn}/${var.api_stage_name}"
-}
-
 output "api_gateway_invoke_url" {
   description = "API Gateway invoke URL"
-  value       = "https://${aws_api_gateway_rest_api.api.id}.execute-api.${var.aws_region}.amazonaws.com/${var.api_stage_name}/process"
+  value       = "${module.lambda_otel.api_gateway_invoke_url}/process"
+}
+
+output "api_gateway_execution_arn" {
+  description = "API Gateway execution ARN"
+  value       = module.lambda_otel.api_gateway_execution_arn
 }
 
 output "sqs_queue_url" {
   description = "SQS Queue URL"
-  value       = aws_sqs_queue.message_queue.url
+  value       = module.lambda_otel.sqs_queue_url
 }
 
 output "sqs_queue_arn" {
   description = "SQS Queue ARN"
-  value       = aws_sqs_queue.message_queue.arn
+  value       = module.lambda_otel.sqs_queue_arn
 }
 
 output "lambda1_function_name" {
   description = "Lambda 1 (API Handler) function name"
-  value       = aws_lambda_function.lambda1.function_name
+  value       = module.lambda_otel.lambda1_function_name
 }
 
 output "lambda2_function_name" {
   description = "Lambda 2 (Worker) function name"
-  value       = aws_lambda_function.lambda2.function_name
+  value       = module.lambda_otel.lambda2_function_name
 }
 
 output "lambda1_arn" {
   description = "Lambda 1 ARN"
-  value       = aws_lambda_function.lambda1.arn
+  value       = module.lambda_otel.lambda1_function_arn
 }
 
 output "lambda2_arn" {
   description = "Lambda 2 ARN"
-  value       = aws_lambda_function.lambda2.arn
+  value       = module.lambda_otel.lambda2_function_arn
 }
 
 # Observability Configuration Information

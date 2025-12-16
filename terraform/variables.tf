@@ -47,10 +47,10 @@ variable "observability_config" {
   default     = "xray_adot"
   validation {
     condition = contains([
-      "xray_adot",           # X-Ray with ADOT layer
-      "xray_community",      # X-Ray with community OTel layer  
-      "newrelic_adot",       # New Relic with ADOT layer
-      "newrelic_community"   # New Relic with community OTel layer
+      "xray_adot",         # X-Ray with ADOT layer
+      "xray_community",    # X-Ray with community OTel layer  
+      "newrelic_adot",     # New Relic with ADOT layer
+      "newrelic_community" # New Relic with community OTel layer
     ], var.observability_config)
     error_message = "Observability config must be one of: xray_adot, xray_community, newrelic_adot, newrelic_community."
   }
@@ -66,5 +66,29 @@ variable "newrelic_license_key" {
 variable "newrelic_account_id" {
   description = "New Relic account ID (required for New Relic configurations)"
   type        = string
-  default     = ""
+  default     = null
+}
+
+# New Relic AWS Integration Variables
+variable "newrelic_api_key" {
+  description = "New Relic Personal API Key (for AWS integration setup)"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "newrelic_region" {
+  description = "New Relic region (US or EU)"
+  type        = string
+  default     = "US"
+  validation {
+    condition     = contains(["US", "EU"], var.newrelic_region)
+    error_message = "New Relic region must be US or EU."
+  }
+}
+
+variable "enable_newrelic_aws_integration" {
+  description = "Enable New Relic AWS integration (requires newrelic_account_id and newrelic_api_key)"
+  type        = bool
+  default     = false
 }

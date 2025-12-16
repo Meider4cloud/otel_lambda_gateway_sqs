@@ -120,7 +120,7 @@ locals {
 
   # Merge current config environment variables with base Lambda environment variables
   lambda1_env_vars = merge({
-    SQS_QUEUE_URL = aws_sqs_queue.message_queue.url
+    SQS_QUEUE_URL = module.lambda_otel.sqs_queue_url
     ENVIRONMENT   = var.environment
     }, local.current_config.environment_variables, {
     # Override service identification for Lambda1
