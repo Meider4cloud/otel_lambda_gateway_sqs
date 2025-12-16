@@ -88,15 +88,15 @@ locals {
         # Propagation
         OTEL_PROPAGATORS = "tracecontext,baggage"
         # Service identification
-        OTEL_SERVICE_NAME        = "${var.project_name}-${var.environment}"
-        OTEL_SERVICE_VERSION     = "1.0.0"
-        OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-${var.environment},service.version=1.0.0,deployment.environment=${var.environment}"
+        #OTEL_SERVICE_NAME        = "${var.project_name}-${var.environment}"
+        OTEL_SERVICE_VERSION = "1.0.0"
+        #OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-${var.environment},service.version=1.0.0,deployment.environment=${var.environment}"
         # Exporter configuration - Send directly to New Relic OTLP endpoint
         OTEL_TRACES_EXPORTER  = "otlp"
         OTEL_METRICS_EXPORTER = "otlp"
         OTEL_LOGS_EXPORTER    = "otlp"
         # New Relic OTLP endpoint (direct export, bypassing collector) - correct EU endpoint  
-        OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/traces"
+        OTEL_EXPORTER_OTLP_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/"
         # Set specific endpoints for each signal type
         OTEL_EXPORTER_OTLP_TRACES_ENDPOINT  = "https://otlp.eu01.nr-data.net/v1/traces"
         OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/metrics"
@@ -122,9 +122,17 @@ locals {
   lambda1_env_vars = merge({
     SQS_QUEUE_URL = aws_sqs_queue.message_queue.url
     ENVIRONMENT   = var.environment
-  }, local.current_config.environment_variables)
+    }, local.current_config.environment_variables, {
+    # Override service identification for Lambda1
+    OTEL_SERVICE_NAME        = "${var.project_name}-api-handler"
+    OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-api-handler,service.version=1.0.0,deployment.environment=${var.environment},lambda.function=api-handler"
+  })
 
   lambda2_env_vars = merge({
     ENVIRONMENT = var.environment
-  }, local.current_config.environment_variables)
+    }, local.current_config.environment_variables, {
+    # Override service identification for Lambda2
+    OTEL_SERVICE_NAME        = "${var.project_name}-worker"
+    OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-worker,service.version=1.0.0,deployment.environment=${var.environment},lambda.function=worker"
+  })
 }
