@@ -103,32 +103,41 @@ def handler(event, context):
             # Extract message body
             message_body = json.loads(record['body'])
             
-            # Extract trace context from multiple sources (X-Ray and W3C)
+            # Extract trace context - Priority: SQS attributes > message body > Lambda env
             trace_context = {}
             
-            # Extract X-Ray trace from Lambda environment
-            trace_header = os.environ.get('_X_AMZN_TRACE_ID')
-            if trace_header:
-                trace_context['X-Amzn-Trace-Id'] = trace_header
-                logger.info(f"Found X-Ray trace header: {trace_header}")
-            
-            # Also extract from SQS attributes if available
-            if 'attributes' in record and 'AWSTraceHeader' in record['attributes']:
-                aws_trace_header = record['attributes']['AWSTraceHeader']
-                trace_context['X-Amzn-Trace-Id'] = aws_trace_header
-                logger.info(f"Found SQS X-Ray trace header: {aws_trace_header}")
-            
-            # Extract W3C trace context from message attributes (fallback)
+            # PRIORITY 1: Extract from SQS message attributes (from producer span)
             if 'messageAttributes' in record:
                 msg_attrs = record['messageAttributes']
+                if 'X-Amzn-Trace-Id' in msg_attrs:
+                    trace_context['X-Amzn-Trace-Id'] = msg_attrs['X-Amzn-Trace-Id']['stringValue']
+                    logger.info(f"Found SQS message X-Ray trace: {msg_attrs['X-Amzn-Trace-Id']['stringValue']}")
                 if 'traceparent' in msg_attrs:
                     trace_context['traceparent'] = msg_attrs['traceparent']['stringValue']
+                    logger.info(f"Found SQS message traceparent: {msg_attrs['traceparent']['stringValue']}")
                 if 'tracestate' in msg_attrs:
                     trace_context['tracestate'] = msg_attrs['tracestate']['stringValue']
             
-            # Fallback to message body trace context
-            body_trace_context = message_body.get('traceContext', {})
-            trace_context.update(body_trace_context)
+            # PRIORITY 2: Extract from SQS record attributes (AWS managed)
+            if 'attributes' in record and 'AWSTraceHeader' in record['attributes']:
+                if 'X-Amzn-Trace-Id' not in trace_context:  # Only if not already set
+                    aws_trace_header = record['attributes']['AWSTraceHeader']
+                    trace_context['X-Amzn-Trace-Id'] = aws_trace_header
+                    logger.info(f"Found SQS AWS trace header: {aws_trace_header}")
+            
+            # PRIORITY 3: Fallback to message body trace context
+            if not trace_context:
+                body_trace_context = message_body.get('traceContext', {})
+                if body_trace_context:
+                    trace_context.update(body_trace_context)
+                    logger.info(f"Using message body trace context: {list(body_trace_context.keys())}")
+            
+            # PRIORITY 4: Last resort - Lambda environment (should not be used for proper hierarchy)
+            if not trace_context:
+                trace_header = os.environ.get('_X_AMZN_TRACE_ID')
+                if trace_header:
+                    trace_context['X-Amzn-Trace-Id'] = trace_header
+                    logger.info(f"Fallback to Lambda env X-Ray trace: {trace_header}")
             
             # Create span with Lambda identification and trace propagation
             if OTEL_AVAILABLE:
