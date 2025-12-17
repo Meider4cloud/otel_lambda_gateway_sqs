@@ -80,7 +80,7 @@ variable "newrelic_api_key" {
 variable "newrelic_region" {
   description = "New Relic region (US or EU)"
   type        = string
-  default     = "US"
+  default     = "EU"
   validation {
     condition     = contains(["US", "EU"], var.newrelic_region)
     error_message = "New Relic region must be US or EU."

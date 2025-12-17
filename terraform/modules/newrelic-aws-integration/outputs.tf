@@ -27,7 +27,7 @@ output "aws_account_id" {
 
 output "aws_region" {
   description = "Primary AWS region for the integration"
-  value       = data.aws_region.current.name
+  value       = data.aws_region.current.id
 }
 
 output "monitored_regions" {

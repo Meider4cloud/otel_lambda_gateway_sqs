@@ -84,7 +84,7 @@ output "api_gateway_execution_arn" {
 
 output "api_gateway_invoke_url" {
   description = "Invoke URL of the API Gateway stage"
-  value       = "https://${aws_api_gateway_rest_api.api.id}.execute-api.${data.aws_region.current.name}.amazonaws.com/${aws_api_gateway_stage.api_stage.stage_name}"
+  value       = "https://${aws_api_gateway_rest_api.api.id}.execute-api.${data.aws_region.current.id}.amazonaws.com/${aws_api_gateway_stage.api_stage.stage_name}"
 }
 
 output "api_gateway_stage_name" {

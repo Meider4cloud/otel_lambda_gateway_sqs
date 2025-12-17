@@ -3,7 +3,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 6.0"
     }
     newrelic = {
       source  = "newrelic/newrelic"
@@ -69,15 +69,16 @@ module "lambda_otel" {
 
 # New Relic AWS Integration Module (commented out until provider issues resolved)
 # Uncomment and configure when ready to use New Relic AWS integration
-# module "newrelic_aws_integration" {
-#   count  = var.enable_newrelic_aws_integration && var.newrelic_account_id != null ? 1 : 0
-#   source = "./modules/newrelic-aws-integration"
-#   
-#   newrelic_account_id  = var.newrelic_account_id
-#   newrelic_license_key = var.newrelic_license_key
-#   integration_name     = "${var.project_name}-${var.environment}"
-#   aws_regions         = [data.aws_region.current.name]
-#   
-#   # ... other configuration
-# }
+module "newrelic_aws_integration" {
+  count  = var.enable_newrelic_aws_integration && var.newrelic_account_id != null ? 1 : 0
+  source = "./modules/newrelic-aws-integration"
+
+  newrelic_account_id = var.newrelic_account_id
+  //newrelic_api_key     = var.newrelic_api_key
+  newrelic_license_key = var.newrelic_license_key
+  integration_name     = "${var.project_name}-${var.environment}"
+  aws_regions          = [data.aws_region.current.id]
+
+  # ... other configuration
+}
 

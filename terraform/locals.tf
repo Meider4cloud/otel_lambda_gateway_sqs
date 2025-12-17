@@ -3,7 +3,7 @@ locals {
   # Layer ARNs for different configurations
   layer_arns = {
     # ADOT layers by region
-    adot = "arn:aws:lambda:${data.aws_region.current.name}:901920570463:layer:aws-otel-python-amd64-ver-1-20-0:1"
+    adot = "arn:aws:lambda:${data.aws_region.current.id}:901920570463:layer:aws-otel-python-amd64-ver-1-20-0:1"
 
     # Community OpenTelemetry layers (instrumentation + collector) build by script into account 339712788047
 
@@ -125,7 +125,7 @@ locals {
     }, local.current_config.environment_variables, {
     # Override service identification for Lambda1
     OTEL_SERVICE_NAME        = "${var.project_name}-api-handler"
-    OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-api-handler,service.version=1.0.0,deployment.environment=${var.environment},lambda.function=api-handler"
+    OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-api-handler,service.version=1.0.0,deployment.environment=${var.environment},lambda.function=api-handler,aws.sqs.QueueName=otel-alml-poc-queue"
   })
 
   lambda2_env_vars = merge({
@@ -133,6 +133,6 @@ locals {
     }, local.current_config.environment_variables, {
     # Override service identification for Lambda2
     OTEL_SERVICE_NAME        = "${var.project_name}-worker"
-    OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-worker,service.version=1.0.0,deployment.environment=${var.environment},lambda.function=worker"
+    OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-worker,service.version=1.0.0,deployment.environment=${var.environment},lambda.function=worker,aws.sqs.QueueName=otel-alml-poc-queue"
   })
 }

@@ -1,18 +1,18 @@
 # New Relic AWS Cloud Integration Module
 # Based on: https://registry.terraform.io/providers/newrelic/newrelic/latest/docs/guides/cloud_integrations_guide#aws
 
-terraform {
-  required_providers {
-    newrelic = {
-      source  = "newrelic/newrelic"
-      version = "~> 3.0"
-    }
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
+# terraform {
+#   required_providers {
+#     newrelic = {
+#       source  = "newrelic/newrelic"
+#       version = "~> 3.0"
+#     }
+#     aws = {
+#       source  = "hashicorp/aws"
+#       version = "~> 5.0"
+#     }
+#   }
+# }
 
 # Data sources for AWS account information
 data "aws_caller_identity" "current" {}
@@ -38,7 +38,6 @@ resource "aws_iam_role" "newrelic_integration_role" {
         Principal = {
           AWS = "arn:aws:iam::754728514883:root"
         }
-        External_Id = var.newrelic_account_id
         Condition = {
           StringEquals = {
             "sts:ExternalId" = var.newrelic_account_id
@@ -151,14 +150,14 @@ resource "newrelic_cloud_aws_integrations" "aws_integrations" {
     }
   }
 
-  # CloudWatch integration
-  dynamic "cloudwatch" {
-    for_each = var.enable_cloudwatch_integration ? [1] : []
-    content {
-      metrics_polling_interval = var.cloudwatch_polling_interval
-      aws_regions              = var.aws_regions
-    }
-  }
+  #   # CloudWatch integration
+  #   dynamic "cloudwatch" {
+  #     for_each = var.enable_cloudwatch_integration ? [1] : []
+  #     content {
+  #       metrics_polling_interval = var.cloudwatch_polling_interval
+  #       aws_regions              = var.aws_regions
+  #     }
+  #   }
 
   # X-Ray integration
   dynamic "x_ray" {
@@ -261,8 +260,9 @@ resource "aws_kinesis_firehose_delivery_stream" "newrelic_stream" {
     request_configuration {
       content_encoding = "GZIP"
 
-      common_attributes = {
-        "licenseKey" = var.newrelic_license_key
+      common_attributes {
+        name  = "licenseKey"
+        value = var.newrelic_license_key
       }
     }
 
@@ -271,17 +271,17 @@ resource "aws_kinesis_firehose_delivery_stream" "newrelic_stream" {
       log_group_name  = aws_cloudwatch_log_group.firehose_logs[0].name
       log_stream_name = aws_cloudwatch_log_stream.firehose_logs[0].name
     }
-  }
 
-  s3_configuration {
-    role_arn   = aws_iam_role.firehose_role[0].arn
-    bucket_arn = aws_s3_bucket.firehose_backup[0].arn
-    prefix     = "failed-metrics/"
+    s3_configuration {
+      role_arn   = aws_iam_role.firehose_role[0].arn
+      bucket_arn = aws_s3_bucket.firehose_backup[0].arn
+      prefix     = "failed-metrics/"
 
-    cloudwatch_logging_options {
-      enabled         = true
-      log_group_name  = aws_cloudwatch_log_group.firehose_logs[0].name
-      log_stream_name = aws_cloudwatch_log_stream.firehose_logs[0].name
+      cloudwatch_logging_options {
+        enabled         = true
+        log_group_name  = aws_cloudwatch_log_group.firehose_logs[0].name
+        log_stream_name = aws_cloudwatch_log_stream.firehose_logs[0].name
+      }
     }
   }
 
