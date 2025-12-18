@@ -33,58 +33,7 @@ locals {
       ]
     }
 
-    # Configuration 2: X-Ray with community OpenTelemetry (via requirements.txt)
-    xray_community = {
-      layers = []
-      environment_variables = {
-        OTEL_PROPAGATORS                   = "tracecontext,baggage,xray"
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = ""
-        OTEL_PYTHON_LOG_CORRELATION        = "true"
-        OTEL_TRACES_EXPORTER               = "console,otlp"
-        OTEL_EXPORTER_OTLP_PROTOCOL        = "grpc"
-        PYTHONPATH                         = "/var/runtime:/var/task:/opt/python"
-        # Enable all instrumentations including SQS for proper trace propagation
-        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = ""
-        # Explicitly enable SQS instrumentation
-        AWS_XRAY_TRACING_NAME = "${var.project_name}-${var.environment}"
-      }
-      iam_permissions = [
-        "xray:PutTraceSegments",
-        "xray:PutTelemetryRecords"
-      ]
-    }
-
-    # Configuration 3: New Relic with ADOT layer
-    newrelic_adot = {
-      layers = [local.layer_arns.adot]
-      environment_variables = {
-        AWS_LAMBDA_EXEC_WRAPPER  = "/opt/otel-instrument"
-        OTEL_PROPAGATORS         = "tracecontext,baggage"
-        OTEL_PYTHON_DISTRO       = "aws_distro"
-        OTEL_PYTHON_CONFIGURATOR = "aws_lambda_configurator"
-        # Force OTLP exporter instead of X-Ray
-        OTEL_TRACES_EXPORTER  = "otlp"
-        OTEL_METRICS_EXPORTER = "otlp"
-        OTEL_LOGS_EXPORTER    = "otlp"
-        # New Relic OTLP endpoint
-        OTEL_EXPORTER_OTLP_ENDPOINT         = "https://otlp.eu01.nr-data.net/v1/traces"
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT  = "https://otlp.eu01.nr-data.net/v1/traces"
-        OTEL_EXPORTER_OTLP_METRICS_ENDPOINT = "https://otlp.eu01.nr-data.net/v1/metrics"
-        OTEL_EXPORTER_OTLP_HEADERS          = "api-key=${var.newrelic_license_key}"
-        OTEL_EXPORTER_OTLP_PROTOCOL         = "http/protobuf"
-        # Disable X-Ray exporter explicitly
-        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = "aws-xray"
-        # Resource attributes for New Relic
-        OTEL_RESOURCE_ATTRIBUTES = "service.name=${var.project_name}-${var.environment},service.version=1.0.0"
-        NEW_RELIC_ACCOUNT_ID     = var.newrelic_account_id
-      }
-      iam_permissions = [
-        "xray:PutTraceSegments",
-        "xray:PutTelemetryRecords"
-      ]
-    }
-
-    # Configuration 4: New Relic with community OpenTelemetry (using requirements.txt, direct export)
+    # Configuration 2: New Relic with community OpenTelemetry (using requirements.txt, direct export)
     newrelic_community = {
       layers = []
       environment_variables = {
@@ -122,7 +71,7 @@ locals {
       ]
     }
 
-    # Configuration 5: New Relic native Lambda layer (APM mode)
+    # Configuration 3: New Relic native Lambda layer (APM mode)
     newrelic_native = {
       layers = ["arn:aws:lambda:eu-central-1:451483290750:layer:NewRelicPython39:107"]
       environment_variables = {

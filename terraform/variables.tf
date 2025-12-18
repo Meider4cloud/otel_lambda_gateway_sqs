@@ -48,12 +48,10 @@ variable "observability_config" {
   validation {
     condition = contains([
       "xray_adot",          # X-Ray with ADOT layer
-      "xray_community",     # X-Ray with community OTel layer  
-      "newrelic_adot",      # New Relic with ADOT layer
-      "newrelic_community", # New Relic with community OTel layer
-      "newrelic_native"     # New Relic native Lambda layer (APM mode)
+      "newrelic_community", # New Relic with community OTel
+      "newrelic_native"     # New Relic native layer
     ], var.observability_config)
-    error_message = "Observability config must be one of: xray_adot, xray_community, newrelic_adot, newrelic_community."
+    error_message = "Observability config must be one of: xray_adot, newrelic_community, newrelic_native."
   }
 }
 

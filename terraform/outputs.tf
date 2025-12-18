@@ -54,9 +54,8 @@ output "configuration_summary" {
   value = {
     config_type = var.observability_config
     description = {
-      xray_adot          = "X-Ray tracing with AWS Distro for OpenTelemetry (ADOT) layer"
-      xray_community     = "X-Ray tracing with Community OpenTelemetry layer"
-      newrelic_adot      = "New Relic monitoring with AWS Distro for OpenTelemetry (ADOT) layer"
+      xray_adot = "X-Ray tracing with AWS Distro for OpenTelemetry (ADOT) layer"
+
       newrelic_community = "New Relic monitoring with Community OpenTelemetry layer"
       newrelic_native    = "New Relic monitoring with native Lambda layer (APM mode)"
     }[var.observability_config]

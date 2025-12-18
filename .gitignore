@@ -14,6 +14,8 @@ terraform.rc
 terraform.tfvars
 *.auto.tfvars
 
+.copilot-instructions
+
 # Lambda deployment packages
 *.zip
 lambda1.zip
