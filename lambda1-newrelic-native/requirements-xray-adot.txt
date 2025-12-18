@@ -1,0 +1,3 @@
+# Requirements for X-Ray with ADOT layer configuration
+# The ADOT layer provides all OpenTelemetry dependencies
+boto3==1.34.0

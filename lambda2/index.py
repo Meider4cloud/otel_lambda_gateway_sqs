@@ -22,7 +22,9 @@ try:
     from opentelemetry.trace import SpanKind, Status, StatusCode
     
     # Initialize manual instrumentation
-    if os.environ.get('AWS_LAMBDA_EXEC_WRAPPER') is None:
+    # Skip OTEL setup if using New Relic native layer
+    observability_config = os.environ.get('OBSERVABILITY_CONFIG', '')
+    if os.environ.get('AWS_LAMBDA_EXEC_WRAPPER') is None and observability_config != 'newrelic_native':
         # Create resource with Lambda identification
         resource = Resource.create({
             "service.name": os.environ.get('OTEL_SERVICE_NAME', 'lambda2-worker'),
@@ -79,6 +81,13 @@ try:
             # Fall back to W3C propagation only
             propagate.set_global_textmap(TraceContextTextMapPropagator())
             print("Using W3C propagation only (X-Ray propagator not available)")
+        
+        print(f"Lambda2: Initialized OpenTelemetry manual instrumentation (config: {observability_config})")
+        
+    elif observability_config == 'newrelic_native':
+        print(f"Lambda2: Skipping OpenTelemetry setup - using New Relic native layer (config: {observability_config})")
+    else:
+        print(f"Lambda2: Using ADOT layer - skipping manual instrumentation (config: {observability_config})")
     
     OTEL_AVAILABLE = True
 except ImportError as e:

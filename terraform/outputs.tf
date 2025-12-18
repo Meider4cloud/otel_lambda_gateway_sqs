@@ -58,8 +58,9 @@ output "configuration_summary" {
       xray_community     = "X-Ray tracing with Community OpenTelemetry layer"
       newrelic_adot      = "New Relic monitoring with AWS Distro for OpenTelemetry (ADOT) layer"
       newrelic_community = "New Relic monitoring with Community OpenTelemetry layer"
+      newrelic_native    = "New Relic monitoring with native Lambda layer (APM mode)"
     }[var.observability_config]
     backend    = startswith(var.observability_config, "newrelic") ? "New Relic" : "AWS X-Ray"
-    layer_type = endswith(var.observability_config, "adot") ? "AWS ADOT" : "Community OpenTelemetry"
+    layer_type = endswith(var.observability_config, "adot") ? "AWS ADOT" : var.observability_config == "newrelic_native" ? "New Relic Native" : "Community OpenTelemetry"
   }
 }

@@ -1,0 +1,3 @@
+# Requirements for New Relic Native configuration
+# The New Relic layer provides everything needed including the Python agent
+boto3==1.34.0

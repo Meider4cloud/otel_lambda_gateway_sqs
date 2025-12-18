@@ -38,9 +38,9 @@ module "lambda_otel" {
   project_name = var.project_name
   environment  = var.environment
 
-  # Lambda source directories
-  lambda1_source_dir = "${path.module}/../lambda1"
-  lambda2_source_dir = "${path.module}/../lambda2"
+  # Lambda source directories - use different directories for New Relic native
+  lambda1_source_dir = var.observability_config == "newrelic_native" ? "${path.module}/../lambda1-newrelic-native" : "${path.module}/../lambda1"
+  lambda2_source_dir = var.observability_config == "newrelic_native" ? "${path.module}/../lambda2-newrelic-native" : "${path.module}/../lambda2"
   build_dir          = path.module
 
   # Lambda configuration
@@ -48,6 +48,10 @@ module "lambda_otel" {
   lambda_timeout     = var.lambda_timeout
   lambda_layers      = local.current_config.layers
   log_retention_days = 7
+
+  # Handler configuration - use New Relic wrapper for native config
+  lambda1_handler = var.observability_config == "newrelic_native" ? "newrelic_lambda_wrapper.handler" : "index.handler"
+  lambda2_handler = var.observability_config == "newrelic_native" ? "newrelic_lambda_wrapper.handler" : "index.handler"
 
   # Environment variables
   lambda1_environment_variables = local.lambda1_env_vars

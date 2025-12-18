@@ -19,7 +19,9 @@ try:
     OTEL_AVAILABLE = True
     
     # Initialize manual instrumentation for community OTel configurations
-    if os.environ.get('AWS_LAMBDA_EXEC_WRAPPER') is None:
+    # Skip OTEL setup if using New Relic native layer
+    observability_config = os.environ.get('OBSERVABILITY_CONFIG', '')
+    if os.environ.get('AWS_LAMBDA_EXEC_WRAPPER') is None and observability_config != 'newrelic_native':
         # This is a community OTel config, initialize manually
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -93,6 +95,12 @@ try:
         # Auto-instrument
         Boto3SQSInstrumentor().instrument()
         BotocoreInstrumentor().instrument()
+        print(f"Lambda1: Initialized OpenTelemetry manual instrumentation (config: {observability_config})")
+        
+    elif observability_config == 'newrelic_native':
+        print(f"Lambda1: Skipping OpenTelemetry setup - using New Relic native layer (config: {observability_config})")
+    else:
+        print(f"Lambda1: Using ADOT layer - skipping manual instrumentation (config: {observability_config})")
         
 except ImportError as e:
     OTEL_AVAILABLE = False

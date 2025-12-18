@@ -22,6 +22,10 @@ locals {
         OTEL_PYTHON_DISTRO          = "aws_distro"
         OTEL_PYTHON_CONFIGURATOR    = "aws_lambda_configurator"
         OTEL_EXPORTER_OTLP_ENDPOINT = ""
+        # Enable SQS message attribute propagation for X-Ray
+        OTEL_PYTHON_LOG_CORRELATION = "true"
+        # Ensure all instrumentations are enabled for X-Ray
+        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = ""
       }
       iam_permissions = [
         "xray:PutTraceSegments",
@@ -39,6 +43,10 @@ locals {
         OTEL_TRACES_EXPORTER               = "console,otlp"
         OTEL_EXPORTER_OTLP_PROTOCOL        = "grpc"
         PYTHONPATH                         = "/var/runtime:/var/task:/opt/python"
+        # Enable all instrumentations including SQS for proper trace propagation
+        OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = ""
+        # Explicitly enable SQS instrumentation
+        AWS_XRAY_TRACING_NAME = "${var.project_name}-${var.environment}"
       }
       iam_permissions = [
         "xray:PutTraceSegments",
@@ -113,6 +121,23 @@ locals {
         "xray:PutTelemetryRecords"
       ]
     }
+
+    # Configuration 5: New Relic native Lambda layer (APM mode)
+    newrelic_native = {
+      layers = ["arn:aws:lambda:eu-central-1:451483290750:layer:NewRelicPython39:107"]
+      environment_variables = {
+        NEW_RELIC_LAMBDA_HANDLER               = "index.handler"
+        NEW_RELIC_ACCOUNT_ID                   = var.newrelic_account_id
+        NEW_RELIC_TRUSTED_ACCOUNT_KEY          = var.newrelic_account_id
+        NEW_RELIC_LICENSE_KEY                  = var.newrelic_license_key
+        NEW_RELIC_APM_LAMBDA_MODE              = "true"
+        NEW_RELIC_EXTENSION_SEND_FUNCTION_LOGS = "false"
+        NEW_RELIC_LAMBDA_EXTENSION_ENABLED     = "true"
+        NEW_RELIC_DATA_COLLECTION_TIMEOUT      = "10s"
+      }
+      iam_permissions = []
+      # Note: Handler needs to be changed to "newrelic_lambda_wrapper.handler" when using this config
+    }
   }
 
   # Current configuration based on variable
@@ -120,8 +145,9 @@ locals {
 
   # Merge current config environment variables with base Lambda environment variables
   lambda1_env_vars = merge({
-    SQS_QUEUE_URL = module.lambda_otel.sqs_queue_url
-    ENVIRONMENT   = var.environment
+    SQS_QUEUE_URL        = module.lambda_otel.sqs_queue_url
+    ENVIRONMENT          = var.environment
+    OBSERVABILITY_CONFIG = var.observability_config
     }, local.current_config.environment_variables, {
     # Override service identification for Lambda1
     OTEL_SERVICE_NAME        = "${var.project_name}-api-handler"
@@ -129,7 +155,8 @@ locals {
   })
 
   lambda2_env_vars = merge({
-    ENVIRONMENT = var.environment
+    ENVIRONMENT          = var.environment
+    OBSERVABILITY_CONFIG = var.observability_config
     }, local.current_config.environment_variables, {
     # Override service identification for Lambda2
     OTEL_SERVICE_NAME        = "${var.project_name}-worker"

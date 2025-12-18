@@ -1,0 +1,29 @@
+import * as cdk from 'aws-cdk-lib';
+import { Construct } from 'constructs';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+
+export class NewRelicExampleCdkStack extends cdk.Stack {
+  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+    // Add latest New Relic Lambda layer ARN from https://layers.newrelic-external.com
+    const NewReliclayerArn = arn:aws:lambda:eu-central-1:451483290750:layer:NewRelicPython39:107;
+    const myFunction = new lambda.Function(this, "NewRelicExampleLambda", {
+      runtime: python3.9,
+      // Update functions handler to point to the New Relic Lambda wrapper
+      handler: "newrelic_lambda_wrapper.handler",
+      code: lambda.Code.fromAsset('lib/lambda-runtime-code'),
+      layers: [lambda.LayerVersion.fromLayerVersionArn(this, 'NewRelicLayer', NewReliclayerArn)],
+      environment: {
+        # For the instrumentation handler to invoke your real handler, we need this value
+        NEW_RELIC_LAMBDA_HANDLER: index.handler
+        # Distributed tracing needs your account ID, and your trusted account ID
+        NEW_RELIC_ACCOUNT_ID: 4391188
+        # If your New Relic account has a parent account, this value should be that account ID. Otherwise, just
+        # your account id.
+        NEW_RELIC_TRUSTED_ACCOUNT_KEY: 4391188
+        NEW_RELIC_LICENSE_KEY : eu01xx9d7595acb1f719c0e905dae964FFFFNRAL
+        NEW_RELIC_APM_LAMBDA_MODE: true  # This flag is required to enable the APM power
+      },
+    });
+  }
+}

@@ -67,6 +67,9 @@ resource "aws_iam_role_policy" "newrelic_integration_policy" {
           "cloudwatch:GetMetricStatistics",
           "cloudwatch:ListMetrics",
           "cloudwatch:GetMetricData",
+          "cloudwatch:DescribeAlarms",
+          "cloudwatch:DescribeAlarmsForMetric",
+          "cloudwatch:GetMetricWidgetImage",
 
           # EC2 and compute
           "ec2:DescribeInstances",
@@ -89,6 +92,14 @@ resource "aws_iam_role_policy" "newrelic_integration_policy" {
           "lambda:ListAliases",
           "lambda:GetAlias",
           "lambda:ListTags",
+          "lambda:GetAccountSettings",
+          "lambda:ListLayers",
+          "lambda:ListLayerVersions",
+          "lambda:GetLayerVersion",
+          "lambda:ListEventSourceMappings",
+          "lambda:GetEventSourceMapping",
+          "lambda:GetPolicy",
+          "lambda:GetFunctionCodeSigningConfig",
 
           # SQS
           "sqs:ListQueues",
@@ -102,6 +113,13 @@ resource "aws_iam_role_policy" "newrelic_integration_policy" {
           "xray:GetTraceSummaries",
           "xray:GetServiceGraph",
           "xray:GetTimeSeriesServiceStatistics",
+
+          # CloudWatch Logs
+          "logs:DescribeLogGroups",
+          "logs:DescribeLogStreams",
+          "logs:GetLogEvents",
+          "logs:FilterLogEvents",
+          "logs:DescribeMetricFilters",
 
           # Resource Groups and Tags
           "tag:GetResources",
